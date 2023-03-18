@@ -5,10 +5,14 @@ from tkinter import messagebox,ttk,colorchooser,filedialog
 import logging
 import tempfile
 import os
-from time import time
+from time import time,localtime,strftime
 import matplotlib.font_manager
 import threading
 import sys
+import json
+import yaml
+import subprocess
+from webbrowser import open as webbrowserOpen
 def resource_path(relative_path):
     if getattr(sys, 'frozen', False):
         base_path = sys._MEIPASS
@@ -52,7 +56,7 @@ logging.basicConfig(level=logging.DEBUG,format=logFormater,datefmt=dateFormater,
 launcherLog = logging.getLogger('Launcher')
 launcherLog.info("initializated successfully")
 
-tempfiles=os.path.join(tempfile.gettempdir(),"/kuankuan/manuscript/",str(time()))
+tempfiles=os.path.join(tempfile.gettempdir(),"/kuankuan/manuscript/",str(int(time()*1000)))
 os.makedirs(tempfiles)
 
 launcherLog.info("临时文件保存位置:"+tempfiles)
@@ -87,6 +91,8 @@ notebook = ttk.Notebook(mainScreen)
 bgArgsBox=tkinter.Frame(notebook)
 fontArgsBox=tkinter.Frame(notebook)
 textBox=tkinter.Frame(notebook)
+
+
 
 notebook.add(fontArgsBox, text='字体')
 notebook.add(textBox, text='文本')
@@ -476,8 +482,13 @@ def mouseUp(event):
     global moveAnchor
     moveAnchor=None
     showerBox.config(cursor="arrow")
+def showImage(image):
+    filename=tempfiles+f"/{float(time())}.png"
+    image.save(filename)
+    print(filename)
+    webbrowserOpen(filename)
 def mouseDouble(event):
-    threading.Thread(target=images[showerArgs["num"]].show,daemon=False).start()
+    showImage(images[showerArgs["num"]])
 def pageDown():
     if showerArgs["num"]==len(images)-1:
         pagedownButton.config(state="disabled")
@@ -538,6 +549,215 @@ easyGrid(ttk.Button(ButtonBox,text="全部保存",command=saveAllImages),row=1,c
 pageupButton=easyGrid(ttk.Button(ButtonBox,text="上一张",state="disabled",command=pageUp),row=2,column=0,sticky="WE",padx=2,pady=2)
 pagedownButton=easyGrid(ttk.Button(ButtonBox,text="下一张",state="disabled",command=pageDown),row=2,column=1,sticky="WE",padx=2,pady=2)
 
+def dfsSave(now):
+    if type(now) in [FloatVar,tkinter.IntVar,tkinter.StringVar]:
+        return now.get()
+    elif type(now) == dict:
+        new={}
+        for key in now:
+            new[key]=dfsSave(now[key])
+        return new
+    elif type(now) == list:
+        new=[]
+        for i in now:
+            new.append(dfsSave(i))
+        return new
+    else:
+        return now
+def dfsImport(now,new):
+    errlist={}
+    if type(now) ==dict:
+        if type(new)!=dict:
+            return ("typeErr",f"{now.__class__.__name__} != {new.__class__.__name__}")
+        for i in now:
+            if i not in new:
+                errlist[i]=(("nonexistence",i))
+                continue
+            retsult=dfsImport(now[i],new[i])
+            if retsult:
+                errlist[i]=retsult
+    elif type(now) == list:
+        if type(new)!=list:
+            return ("typeErr",f"{now.__class__.__name__} != {new.__class__.__name__}")
+        for i in range(len(now)):
+            if len(new)<=i:
+                errlist[i]=(("nonexistence",i))
+                continue
+            retsult=dfsImport(now[i],new[i])
+            if retsult:
+                errlist[i]=retsult
+    elif type(new) in [FloatVar,tkinter.IntVar,tkinter.StringVar]: 
+        try:
+            new.set(now)
+        except:
+            errlist="typeErr","set Fail"
+    else:
+        errlist="typeErr","unknown"
+    return errlist
+
+def importConfig():
+    importConfigLog=logging.getLogger("importConfigLog")
+    importConfigLog.debug("询问导入文件")
+    retsult=filedialog.askopenfilename(title="请旋转文件",filetypes=[("JSON文件","*.json"),("yaml文件","*.yml"),("任意文件","*.*")])
+    if not retsult:
+        importConfigLog.debug("用户取消")
+    importConfigLog.debug(f"用户选择 {retsult}")
+    try:
+        with open(retsult,"r",encoding="utf-8") as f:
+            configs=f.read()
+    except:
+        importConfigLog.warning("无法打开文件")
+        messagebox.showerror("错误","无法打开文件")
+        return
+    importWays={"yaml":yaml.load,"json":json.loads}
+    importType=""
+    for i in importWays:
+        try:
+            config=importWays[i](configs)
+            if type(config)==dict:
+                importType=i
+                break
+        except:
+            continue
+    if not importType:
+        importConfigLog.warning("格式不正确")
+        messagebox.showerror("错误","该文件不是支持的文件类型")
+        return
+    try:
+        errs=dfsImport(config,{"bgArgs":bgArgs,"fontArgs":fontArgs})
+    except:
+        importConfigLog.warning("导入时异常")
+        messagebox.showerror("错误","导入配置时出现异常")
+        return
+    if errs:
+        importConfigLog.warning(json.dumps(errs,indent=4,separators=(",",":"),ensure_ascii=False))
+        messagebox.showwarning("警告","部分参数导入失败,参见日志")
+        return
+    importConfigLog.info("导入成功")
+    messagebox.showinfo("导出成功",f"配置{retsult}导入成功")
+    
+
+def deriveConfig():
+    deriveConfigLog=logging.getLogger("deriveConfigLog")
+    configs=dfsSave({"bgArgs":bgArgs,"fontArgs":fontArgs})
+    deriveConfigLog.debug("数据检索完成，等待用户选择")
+    retsult=filedialog.asksaveasfilename(title="请选择保存文件",filetypes=[("JSON文件","*.json"),("yaml文件","*.yml"),("任意文件","*.*")],defaultextension=".json",initialfile="配置文件%s.json"%(strftime("%Y-%m-%d-%H-%M-%S",localtime(time()))))
+    deriveConfigLog.debug(f"用户选择 {retsult}")
+    if not retsult:
+        deriveConfigLog.info("取消导出")
+        return
+    if retsult.lower()[-4:]==".yml":
+        encodeType="yaml"
+        configs=yaml.dump(configs,allow_unicode=True)
+    else:
+        encodeType="json"
+        configs=json.dumps(configs,indent=4,separators=(",",":"),ensure_ascii=False)
+    
+    deriveConfigLog.debug("序列化完成")
+    try:
+        with open(retsult,"w",encoding="utf-8") as f:
+            f.write(configs)
+    except:
+        deriveConfigLog.warning("无法打开文件")
+        messagebox.showerror("错误","无法打开文件")
+        return
+    deriveConfigLog.info(f"配置已用{encodeType}格式导出至 {retsult}")
+    messagebox.showinfo("导出成功",f"当前配置已用{encodeType}格式导出至 {retsult}")
+
+def aboutShower():
+    auboutScreen=tkinter.Tk()
+    auboutScreen.iconbitmap(resource_path(os.path.join("logo.ico")))
+    auboutScreen.title("关于")
+
+    messageBox=tkinter.Frame(auboutScreen)
+    messageBox.grid(row=0,column=0)
+
+    createrTitle=tkinter.Label(messageBox,text="作者:")
+    createrTitle.grid(row=0,column=0,sticky="W")
+    creater=tkinter.Entry(messageBox)
+    creater.insert(0,"宽宽")
+    creater.config(state="readonly")
+    creater.grid(row=0,column=1,sticky="W")
+
+    createrQQTitle=tkinter.Label(messageBox,text="作者QQ:")
+    createrQQTitle.grid(row=1,column=0,sticky="W")
+    createrQQ=tkinter.Entry(messageBox)
+    createrQQ.insert(0,"2163826131")
+    createrQQ.config(state="readonly")
+    createrQQ.grid(row=1,column=1,sticky="W")
+    
+    createrUrlTitle=tkinter.Label(messageBox,text="作者主页:")
+    createrUrlTitle.grid(row=2,column=0,sticky="W")
+    createrUrl=tkinter.Entry(messageBox,fg="blue",cursor="hand2")
+    createrUrl.insert(0,"宽宽2007的小天地")
+    def startURL(event):
+        webbrowserOpen("https://kuankuan2007.gitee.io")
+    createrUrl.bind("<Button-1>", startURL)
+    createrUrl.config(state="readonly")
+    createrUrl.grid(row=2,column=1,sticky="W")
+
+    createrGiteeTitle=tkinter.Label(messageBox,text="作者Gitee:")
+    createrGiteeTitle.grid(row=3,column=0,sticky="W")
+    createrGitee=tkinter.Entry(messageBox,fg="blue",cursor="hand2")
+    createrGitee.insert(0,"宽宽2007")
+    def startGitee(event):
+        webbrowserOpen("https://gitee.com/kuankuan2007")
+    createrGitee.bind("<Button-1>", startGitee)
+    createrGitee.config(state="readonly")
+    createrGitee.grid(row=3,column=1,sticky="W")
+
+    createrGithbTitle=tkinter.Label(messageBox,text="作者Github:")
+    createrGithbTitle.grid(row=4,column=0,sticky="W")
+    createrGithb=tkinter.Entry(messageBox,fg="blue",cursor="hand2")
+    createrGithb.insert(0,"KUANKUAN2007")
+    def startGitee(event):
+        webbrowserOpen("https://github.com/kuankuan2007")
+    createrGithb.bind("<Button-1>", startGitee)
+    createrGithb.config(state="readonly")
+    createrGithb.grid(row=4,column=1,sticky="W")
+
+    createrWeiXinPayTitle=tkinter.Label(messageBox,text="赞助作者")
+    createrWeiXinPayTitle.grid(row=5,column=0,sticky="W")
+    createrWeiXinPay=tkinter.Entry(messageBox,fg="blue",cursor="hand2")
+    createrWeiXinPay.insert(0,"微信支付")
+    def startWeiXinPayTitle(event):
+        webbrowserOpen("https://kuankuan2007.gitee.io/WeiXinPay.png")
+    createrWeiXinPay.bind("<Button-1>", startWeiXinPayTitle)
+    createrWeiXinPay.config(state="readonly")
+    createrWeiXinPay.grid(row=5,column=1,sticky="W")
+
+    versionTitle=tkinter.Label(messageBox,text="版本")
+    versionTitle.grid(row=6,column=0,sticky="W")
+    version=tkinter.Entry(messageBox)
+    version.insert(0,"v0.0.2")
+    version.config(state="readonly")
+    version.grid(row=6,column=1,sticky="W")
+
+    releaseAtTitle=tkinter.Label(messageBox,text="发布日期")
+    releaseAtTitle.grid(row=7,column=0,sticky="W")
+    releaseAt=tkinter.Entry(messageBox)
+    releaseAt.insert(0,"2023-3-19")
+    releaseAt.config(state="readonly")
+    releaseAt.grid(row=7,column=1,sticky="W")
+
+    auboutScreen.mainloop()
+
+mainManu=tkinter.Menu(mainScreen,tearoff=0)
+mainScreen.config(menu=mainManu)
+
+configurationManu=tkinter.Menu(mainManu,tearoff=0)
+aboutManu=tkinter.Menu(mainManu,tearoff=0)
+
+configurationManu.add_command(label="导入配置",command=importConfig)
+configurationManu.add_command(label="导出配置",command=deriveConfig)
+
+aboutManu.add_command(label="帮助",command=lambda:webbrowserOpen("https://kuankuan2007.gitee.io/docs/handwritten-text-generator/"))
+aboutManu.add_command(label="开源",command=lambda:webbrowserOpen("https://gitee.com/kuankuan2007/handwritten-text-generator"))
+aboutManu.add_command(label="关于",command=threading.Thread(target=aboutShower,daemon=True).start)
+
+mainManu.add_cascade(label='配置',menu=configurationManu)
+mainManu.add_cascade(label='软件',menu=aboutManu)
 
 launcherLog.info("启动主循环")
+
 mainScreen.mainloop()
