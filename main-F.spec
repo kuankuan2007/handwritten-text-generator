@@ -5,11 +5,11 @@ block_cipher = None
 
 
 a = Analysis(
-    ['E:\\作品\\手写体\\main.py'],
+    ['main.py'],
     pathex=[],
     binaries=[],
     datas=[("files",".")],
-    hiddenimports=[],
+    hiddenimports=["PIL._tkinter_finder"],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
@@ -41,5 +41,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=['E:\\作品\\手写体\\logo.ico'],
+    icon=['logo.ico'],
 )

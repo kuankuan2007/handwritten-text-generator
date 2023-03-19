@@ -56,7 +56,7 @@ logging.basicConfig(level=logging.DEBUG,format=logFormater,datefmt=dateFormater,
 launcherLog = logging.getLogger('Launcher')
 launcherLog.info("initializated successfully")
 
-tempfiles=os.path.join(tempfile.gettempdir(),"/kuankuan/manuscript/",str(int(time()*1000)))
+tempfiles=os.path.join(tempfile.gettempdir(),"kuankuan/manuscript/",str(int(time()*1000)))
 os.makedirs(tempfiles)
 
 launcherLog.info("临时文件保存位置:"+tempfiles)
@@ -84,7 +84,10 @@ def easyBindScale(ele,command):
     ele.bind("<FocusOut>", command)
     return ele
 mainScreen = tkinter.Tk()
-mainScreen.iconbitmap(resource_path(os.path.join("logo.ico")))
+try:
+    mainScreen.iconbitmap(resource_path(os.path.join("logo.ico")))
+except:
+    pass
 mainScreen.title("手写文字生成器")
 mainScreen.resizable(height=False,width=False)
 notebook = ttk.Notebook(mainScreen)
@@ -390,12 +393,21 @@ def uploadImage():
     imgshower=img.resize((int(x*showerArgs["zoom"]/100),int(y*showerArgs["zoom"]/100)))
     imgshowerTk=ImageTk.PhotoImage(image=imgshower)
     showerBox.itemconfig("shower", image=imgshowerTk)
-def zoomPhoto(event):
-    if not 0<showerArgs["zoom"]+event.delta//12<1000:
+def zoomPhoto(delta):
+    if not 0<showerArgs["zoom"]+delta<1000:
         return
-    showerArgs["zoom"]+=event.delta//12
+    showerArgs["zoom"]+=delta
     showerLog.debug("Photo zoom -> %d"%showerArgs["zoom"])
     uploadImage()
+def windowsMouseWheel(event):
+    delta=event.delta//12
+    zoomPhoto(delta)
+def linuxMouseWheel(way):
+    if way:
+        delta=10
+    else:
+        delta=-10
+    zoomPhoto(delta)
 def movePhoto(event):
     global moveAnchor
     if moveAnchor==None:
@@ -536,7 +548,9 @@ imgshowerTk=ImageTk.PhotoImage(image=images[0])
 showerBox=tkinter.Canvas(mainScreen,width=400,height=600)
 showerBox.create_image(200,300,image=imgshowerTk,tag="shower")
 showerBox.grid(row=0,column=1,rowspan=2,padx=2,pady=2)
-showerBox.bind("<MouseWheel>",zoomPhoto)
+showerBox.bind("<MouseWheel>",windowsMouseWheel)
+showerBox.bind("<Button-4>",lambda event:linuxMouseWheel(True))
+showerBox.bind("<Button-5>",lambda event:linuxMouseWheel(False))
 showerBox.bind("<B1-Motion>",movePhoto)
 showerBox.bind("<Button-1>",mouseDown)
 showerBox.bind("<ButtonRelease-1>",mouseUp)
@@ -598,7 +612,7 @@ def dfsImport(now,new):
 def importConfig():
     importConfigLog=logging.getLogger("importConfigLog")
     importConfigLog.debug("询问导入文件")
-    retsult=filedialog.askopenfilename(title="请旋转文件",filetypes=[("JSON文件","*.json"),("yaml文件","*.yml"),("任意文件","*.*")])
+    retsult=filedialog.askopenfilename(title="请选择文件",filetypes=[("JSON文件","*.json"),("yaml文件","*.yml"),("任意文件","*.*")])
     if not retsult:
         importConfigLog.debug("用户取消")
     importConfigLog.debug(f"用户选择 {retsult}")
@@ -609,7 +623,7 @@ def importConfig():
         importConfigLog.warning("无法打开文件")
         messagebox.showerror("错误","无法打开文件")
         return
-    importWays={"yaml":yaml.load,"json":json.loads}
+    importWays={"yaml":lambda configs:yaml.load(configs,Loader=yaml.FullLoader),"json":json.loads}
     importType=""
     for i in importWays:
         try:
