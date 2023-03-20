@@ -13,6 +13,8 @@ import json
 import yaml
 import subprocess
 from webbrowser import open as webbrowserOpen
+from platform import platform
+sys_platform = platform().lower()
 def resource_path(relative_path):
     if getattr(sys, 'frozen', False):
         base_path = sys._MEIPASS
@@ -84,10 +86,6 @@ def easyBindScale(ele,command):
     ele.bind("<FocusOut>", command)
     return ele
 mainScreen = tkinter.Tk()
-try:
-    mainScreen.iconbitmap(resource_path(os.path.join("logo.ico")))
-except:
-    pass
 mainScreen.title("手写文字生成器")
 mainScreen.resizable(height=False,width=False)
 notebook = ttk.Notebook(mainScreen)
@@ -229,7 +227,7 @@ class EntryWithScale(tkinter.Frame):
         self.logger.debug("Active")
         self.entry.config(state="normal")
         self.scale.config(state="normal")
-        
+
 def changeBgType():
     changeBgTypeLog=logging.getLogger('changeBgType')
     if bgArgs["bgType"].get():
@@ -313,19 +311,33 @@ fontArgs={
 }
 
 def changeFontFamily(*args):
-    logging.getLogger("changeFontFamily").debug("fontFamily change -> %s"%fontArgs["fontFamily"].get())
+    logging.getLogger("changeFontFamily").debug("fontFamily change -> %s(%s)"%(fontArgs["fontFamily"].get(),fonts[fontArgs["fontFamily"].get()]))
 def changeEndChars(*args):
     logging.getLogger("changeEndChars").debug("endChars change -> %s"%fontArgs["endChars"].get())
 def changeFontSize(*args):
     fontArgsControler[4][0].scale.config(from_=fontArgs["fontSize"].get())
     if fontArgs["lineSpacing"].get()<fontArgs["fontSize"].get():
         fontArgs["lineSpacing"].set(fontArgs["fontSize"].get())
+def chooseOtherFont():
+    chooseOtherFontLog=logging.getLogger("chooseOtherFont")
+    chooseOtherFontLog.debug("等待用户选择")
+    retsult=filedialog.askopenfilename(title="请选择文件",filetypes=[("字体文件",[".ttf",".otf"]),("任意文件","*.*")])
+    if not retsult:
+        chooseOtherFontLog.debug("用户取消了导入")
+        return
+    filename=os.path.basename(retsult)
+    chooseOtherFontLog.debug("路径%s 文件%s"%(retsult,filename))
+    fonts[filename]=retsult
+    fontArgs["fontFamily"].set(filename)
 fontArgs["fontFamily"].trace_variable("w",changeFontFamily)
 fontArgs["endChars"].trace_variable("w",changeEndChars)
 fontArgs["fontSize"].trace_variable("w",changeFontSize)
+fontFamilyChooserBox=easyGrid(tkinter.Frame(fontArgsBox),row=0,column=1,columnspan=2,sticky="W")
 fontArgsControler=[
     [
-        easyGrid(resetEntry(ttk.Combobox(fontArgsBox,textvariable=fontArgs["fontFamily"],width=20,values=list(fonts.keys()),state="readonly"),list(fonts.keys())[0],True),row=0,column=1,columnspan=2,sticky="W"),
+        
+        easyGrid(resetEntry(ttk.Combobox(fontFamilyChooserBox,textvariable=fontArgs["fontFamily"],width=20,values=list(fonts.keys()),state="readonly"),list(fonts.keys())[0],True),row=0,column=0,sticky="W"),
+        easyGrid(ttk.Button(fontFamilyChooserBox,text="其他",command=chooseOtherFont),row=0,column=1,sticky="W")
     ],
     [
         easyGrid(Colors(fontArgsBox,logName="文字颜色",width=10,variable=fontArgs["color"]),row=1,column=1,columnspan=2,sticky="W")
@@ -401,6 +413,9 @@ def zoomPhoto(delta):
     uploadImage()
 def windowsMouseWheel(event):
     delta=event.delta//12
+    zoomPhoto(delta)
+def macMouseWheel(event):
+    delta=event.delta*10
     zoomPhoto(delta)
 def linuxMouseWheel(way):
     if way:
@@ -548,9 +563,13 @@ imgshowerTk=ImageTk.PhotoImage(image=images[0])
 showerBox=tkinter.Canvas(mainScreen,width=400,height=600)
 showerBox.create_image(200,300,image=imgshowerTk,tag="shower")
 showerBox.grid(row=0,column=1,rowspan=2,padx=2,pady=2)
-showerBox.bind("<MouseWheel>",windowsMouseWheel)
-showerBox.bind("<Button-4>",lambda event:linuxMouseWheel(True))
-showerBox.bind("<Button-5>",lambda event:linuxMouseWheel(False))
+if "windows" in sys_platform:
+    showerBox.bind("<MouseWheel>",windowsMouseWheel)
+elif "macos" in sys_platform:
+    showerBox.bind("<MouseWheel>",macMouseWheel)
+else:
+    showerBox.bind("<Button-4>",lambda event:linuxMouseWheel(True))
+    showerBox.bind("<Button-5>",lambda event:linuxMouseWheel(False))
 showerBox.bind("<B1-Motion>",movePhoto)
 showerBox.bind("<Button-1>",mouseDown)
 showerBox.bind("<ButtonRelease-1>",mouseUp)

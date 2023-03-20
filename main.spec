@@ -8,7 +8,7 @@ a = Analysis(
     ['main.py'],
     pathex=[],
     binaries=[],
-    datas=[("files",".")],
+    datas=[],
     hiddenimports=["PIL._tkinter_finder"],
     hookspath=[],
     hooksconfig={},
